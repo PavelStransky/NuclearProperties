@@ -343,7 +343,6 @@ def plot_iso_lines(nuclides, matrix, Z=20, N=20, title="", label="J"):
 
     plt.plot(Ns, line, 'o-', alpha=0.7, label=f'isotopes Z={Z}')
 
-
     line = matrix[N, :]
     Zs = np.array(range(matrix.shape[1]))
 
