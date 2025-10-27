@@ -360,7 +360,8 @@ def plot_iso_lines(nuclides, matrix, Z=20, N=20, title="", label="J"):
     plt.show()
 
 
-def compare_fits(nuclides):
+def compare_fits(nuclides, cut=20):
+    """ Compare different fits to the Bethe-Weizsäcker formula (cut is minimum A to include) """
     Ns = np.array([nuclide['N'] for nuclide in nuclides])
     Zs = np.array([nuclide['Z'] for nuclide in nuclides])
 
@@ -368,7 +369,7 @@ def compare_fits(nuclides):
     As = Ns + Zs
 
     bs = np.array([nuclide['b'] for nuclide in nuclides])
-
+    
     length = len(bs)
 
     def BW_fit_B(NZ, a_v=15.76, a_s=17.81, a_c=0.711, a_a=23.7, delta=33.5):
@@ -413,9 +414,33 @@ def compare_fits(nuclides):
     fit(params, BW_fit_B_noAC, per_nucleon=False)
 
     params = {"a_v": 15.75, "a_s": 17.8, "a_c": 0.711, "a_a": 23.7, "delta": 34}
-    return fit(params, BW_fit_B_pairing12, per_nucleon=False)
+    best_fit = fit(params, BW_fit_B_pairing12, per_nucleon=False)
 
+    print("\nFitting only for A >= ", cut)
 
+    bs = bs[As >= cut]
+    Ns = Ns[As >= cut]
+    Zs = Zs[As >= cut]
+    As = Ns + Zs
+    NZs = np.vstack((Ns, Zs))
+    length = len(bs)
+
+    res = bs - Bethe_Weizsacker(Ns, Zs)
+    print(f"Wiki (LS2) (R={np.sqrt(np.sum(res**2)) / length:.3f})")
+
+    params = {"a_v": 15.75, "a_s": 17.8, "a_c": 0.711, "a_a": 23.7, "delta": 34}
+    fit(params, BW_fit_b, per_nucleon=True)
+
+    params = {"a_v": 15.75, "a_s": 17.8, "a_c": 0.711, "a_a": 23.7, "delta": 34}
+    fit(params, BW_fit_B, per_nucleon=False)
+
+    params = {"a_v": 15.75, "a_s": 17.8, "a_a": 23.7, "delta": 34}
+    fit(params, BW_fit_B_noAC, per_nucleon=False)
+
+    params = {"a_v": 15.75, "a_s": 17.8, "a_c": 0.711, "a_a": 23.7, "delta": 34}
+    fit(params, BW_fit_B_pairing12, per_nucleon=False)
+
+    return best_fit
 
 def Bethe_Weizsacker_deviation(nuclides, *params):
     """ Calculate deviation matrix from Bethe-Weizsäcker formula. """
