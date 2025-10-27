@@ -491,8 +491,8 @@ def proton_drip_line(*params):
     return np.array(Ns, dtype=int), np.array(drip_line, dtype=int)
 
 
-def valley_of_stability(*params):
-    """ Valley of Stability """
+def beta_stability(*params):
+    """ Region of beta stability """
     Zs = np.array(range(1, 120), dtype=int)
 
     drip_line = []
@@ -518,7 +518,7 @@ def valley_of_stability(*params):
 def plot_drip_lines(*best_params):
     plt.plot(*neutron_drip_line(*best_params), color='blue', linestyle='-', linewidth=1, label='Neutron Drip Line')
     plt.plot(*proton_drip_line(*best_params), color='green', linestyle='-', linewidth=1, label='Proton Drip Line')
-    plt.plot(*valley_of_stability(*best_params), color='black', linestyle='-', linewidth=1, label='Valley of Stability')
+    plt.plot(*beta_stability(*best_params), color='black', linestyle='-', linewidth=1, label='Valley of Stability')
     plt.legend()
 
 
@@ -584,8 +584,8 @@ def beta_decay(nuclides):
     return beta
 
 
-def plot_nuclei_along_valley_of_stability(nuclides, params):
-    Ns_valley, Zs_valley = valley_of_stability(*params)
+def plot_nuclei_along_beta_stability(nuclides, params):
+    Ns_valley, Zs_valley = beta_stability(*params)
 
     b_matrix = create_matrix(nuclides, name="b")
 
@@ -621,54 +621,53 @@ def plot_nuclei_along_valley_of_stability(nuclides, params):
     plt.grid(alpha=0.5)
     plt.show()
 
+""" Main analysis """
+if __name__ == "__main__":
+    nuclides = import_masses()
+    most_bound_nuclei(nuclides)
 
-nuclides = import_masses()
-most_bound_nuclei(nuclides)
+    import_spins(nuclides)
 
-import_spins(nuclides)
+    best_params = compare_fits(nuclides)
+    plot_drip_lines(*best_params)
 
-best_params = compare_fits(nuclides)
-plot_drip_lines(*best_params)
+    b_matrix = create_matrix(nuclides)
+    plot_heatmap(b_matrix, title="Binding Energy per Nucleon", vmin=6, vmax=9)
 
-b_matrix = create_matrix(nuclides)
-plot_heatmap(b_matrix, title="Binding Energy per Nucleon", vmin=6, vmax=9)
+    spin_matrix = 0.5 * create_matrix(nuclides, name="spin")
+    plot_heatmap(spin_matrix, title="Ground-state spins", label="J", vmin=-0.25, vmax=6.25, elements=13)
+    plot_iso_lines(nuclides, spin_matrix, title="Nuclear spin", Z=20, N=20)
+    plot_iso_lines(nuclides, spin_matrix, title="Nuclear spin", Z=82, N=126)
 
-spin_matrix = 0.5 * create_matrix(nuclides, name="spin")
-plot_heatmap(spin_matrix, title="Ground-state spins", label="J", vmin=-0.25, vmax=6.25, elements=13)
-plot_iso_lines(nuclides, spin_matrix, title="Nuclear spin", Z=20, N=20)
-plot_iso_lines(nuclides, spin_matrix, title="Nuclear spin", Z=82, N=126)
+    parity_matrix = create_matrix(nuclides, name="parity")
+    plot_heatmap(parity_matrix, title="Nuclear Parities", show_colorbar=False, vmin=-2.5, vmax=2.5, elements=5)
 
-parity_matrix = create_matrix(nuclides, name="parity")
-plot_heatmap(parity_matrix, title="Nuclear Parities", show_colorbar=False, vmin=-2.5, vmax=2.5, elements=5)
-plot_iso_lines(nuclides, parity_matrix, title="Nuclear parity", Z=20, N=20)
-plot_iso_lines(nuclides, parity_matrix, title="Nuclear parity", Z=82, N=126)
+    plot_isotope_lines(nuclides, b_matrix, title="Binding energy per nucleon", Zs=[26])
+    plot_beta_lines(b_matrix, title="Beta lines", As=[133,134])
 
-plot_isotope_lines(nuclides, b_matrix, title="Binding energy per nucleon", Zs=[26])
-plot_beta_lines(b_matrix, title="Beta lines", As=[133,134])
+    alpha = alpha_decay(nuclides)
+    plot_heatmap(alpha, title="Possible Alpha Decay", show_colorbar=False)
 
-alpha = alpha_decay(nuclides)
-plot_heatmap(alpha, title="Possible Alpha Decay", show_colorbar=False)
+    beta = beta_decay(nuclides)
+    plot_heatmap(beta, title="Possible Beta Decay", show_colorbar=False)
 
-beta = beta_decay(nuclides)
-plot_heatmap(beta, title="Possible Beta Decay", show_colorbar=False)
+    deviation = Bethe_Weizsacker_deviation(nuclides, *best_params)
+    plot_heatmap(deviation, title="Deviation Experiment - Bethe-Weizsäcker", label='Bexp/A - Btheor/A [MeV]', vmin=-10, vmax=10)
 
-deviation = Bethe_Weizsacker_deviation(nuclides, *best_params)
-plot_heatmap(deviation, title="Deviation Experiment - Bethe-Weizsäcker", label='Bexp/A - Btheor/A [MeV]', vmin=-10, vmax=10)
+    SE = separation(nuclides, 0, 1)
+    plot_heatmap(SE, title="1p separation Energy", label="S1p [MeV]", vmin=0, vmax=15)
 
-SE = separation(nuclides, 0, 1)
-plot_heatmap(SE, title="1p separation Energy", label="S1p [MeV]", vmin=0, vmax=15)
+    SE = separation(nuclides, 1, 0)
+    plot_heatmap(SE, title="1n separation Energy", label="S1n [MeV]", vmin=0, vmax=15)
 
-SE = separation(nuclides, 1, 0)
-plot_heatmap(SE, title="1n separation Energy", label="S1n [MeV]", vmin=0, vmax=15)
+    SE = separation(nuclides, 0, 2)
+    plot_heatmap(SE, title="2p separation Energy", label="S2p [MeV]", vmin=0, vmax=25)
 
-SE = separation(nuclides, 0, 2)
-plot_heatmap(SE, title="2p separation Energy", label="S2p [MeV]", vmin=0, vmax=25)
+    SE = separation(nuclides, 2, 0)
+    plot_heatmap(SE, title="2n separation Energy", label="S2n [MeV]", vmin=0, vmax=25)
+    plot_isotope_lines(nuclides, SE, title="2n separation energy", label="S2n [MeV]")
 
-SE = separation(nuclides, 2, 0)
-plot_heatmap(SE, title="2n separation Energy", label="S2n [MeV]", vmin=0, vmax=25)
-plot_isotope_lines(nuclides, SE, title="2n separation energy", label="S2n [MeV]")
+    SE = separation(nuclides, 2, 2)
+    plot_heatmap(SE, title="α separation Energy", label="Sα [MeV]", vmin=-10, vmax=20)
 
-SE = separation(nuclides, 2, 2)
-plot_heatmap(SE, title="α separation Energy", label="Sα [MeV]", vmin=-10, vmax=20)
-
-plot_nuclei_along_valley_of_stability(nuclides, best_params)
+    plot_nuclei_along_beta_stability(nuclides, best_params)
