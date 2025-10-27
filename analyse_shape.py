@@ -1,6 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
-# from spheroid import calculate_and_plot, plot_magic_numbers
+# from spheroid import calculate_and_plot, plot_magic_numbers, fname
 from nilsson_cartesian import calculate_and_plot, plot_magic_numbers, fname
 from alive_progress import alive_bar
 
@@ -8,7 +8,7 @@ def total_energy(energies, particles):
     result = [sum(energies[i, 0:particles]) for i in range(energies.shape[0])]
     return np.array(result)
 
-def analyze_shapes(deltas, max_particles=100):
+def analyze_shapes(deltas, energies, max_particles=100):
     prolate = [0]
     oblate = [0]
     spherical = [0]
@@ -60,21 +60,23 @@ def analyze_shapes(deltas, max_particles=100):
     plt.title("Equilibrium Deformation δ")
     plt.show()
 
-try:
-    delta_energies = np.loadtxt(fname)
-    print(f"Loaded precomputed energies from '{fname}'")
-except FileNotFoundError:
-    delta_energies = calculate_and_plot()
-    np.savetxt(fname, delta_energies)
+""" Main analysis"""
+if __name__ == "__main__":
+    try:
+        delta_energies = np.loadtxt(fname)
+        print(f"Loaded precomputed energies from '{fname}'")
+    except FileNotFoundError:
+        delta_energies = calculate_and_plot()
+        np.savetxt(fname, delta_energies)
 
-deltas = delta_energies[:,0]
-energies = delta_energies[:,1:]
+    deltas = delta_energies[:,0]
+    energies = delta_energies[:,1:]
 
-particles = 15
-plt.plot(deltas, total_energy(energies, particles), color='black', linewidth=2)
-plt.xlabel("Deformation δ")
-plt.ylabel(f"E")
-plt.title(f"Total energy for {particles} particles")
-plt.show()
+    particles = 15
+    plt.plot(deltas, total_energy(energies, particles), color='black', linewidth=2)
+    plt.xlabel("Deformation δ")
+    plt.ylabel(f"E")
+    plt.title(f"Total energy for {particles} particles")
+    plt.show()
 
-analyze_shapes(deltas, max_particles=200)
+    analyze_shapes(deltas, energies, max_particles=200)
