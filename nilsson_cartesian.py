@@ -37,6 +37,8 @@ def calculate_and_plot(num_levels=1000, num_delta=1001):
     return delta_energies
 
 def plot_magic_numbers():
+    """ Plot vertical lines at magic numbers 
+        (Magic numbers were determined from the one-particle separation energy plot) """
     magic_numbers = [10, 20, 35, 56, 84, 120, 165]
     for mn in magic_numbers:
         plt.axvline(mn, color='gray', linestyle='--', linewidth=0.8)
