@@ -30,7 +30,7 @@ def calculate_and_plot(num_levels=1000, num_delta=1001):
     plt.plot(deltas, delta_energies[:, 1:], color='blue', linewidth=1)
     plt.xlabel("Deformation δ")
     plt.ylabel("Energy (ℏω units)")
-    plt.ylim(0, 20)
+    plt.ylim(0, 10)
     plt.title("3D Anisotropic Harmonic Oscillator in Cartesian Basis")
     plt.show()
 

@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 # from spheroid import calculate_and_plot, plot_magic_numbers, fname
 from nilsson_cartesian import calculate_and_plot, plot_magic_numbers, fname
+# from nilsson_spherical import calculate_and_plot, plot_magic_numbers, fname
 from alive_progress import alive_bar
 
 def total_energy(energies, particles):
