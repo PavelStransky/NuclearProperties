@@ -1,9 +1,13 @@
 import numpy as np
 import matplotlib.pyplot as plt
-# from spheroid import calculate_and_plot, plot_magic_numbers, fname
-from nilsson_cartesian import calculate_and_plot, plot_magic_numbers, fname
-# from nilsson_spherical import calculate_and_plot, plot_magic_numbers, fname
+from matplotlib import rcParams
 from alive_progress import alive_bar
+
+from nilsson_cartesian import calculate_and_plot, plot_magic_numbers, fname
+# from spheroid import calculate_and_plot, plot_magic_numbers, fname
+# from nilsson_spherical import calculate_and_plot, plot_magic_numbers, fname
+
+rcParams["figure.figsize"] = (6, 4.7)
 
 def total_energy(energies, particles):
     result = [sum(energies[i, 0:particles]) for i in range(energies.shape[0])]
