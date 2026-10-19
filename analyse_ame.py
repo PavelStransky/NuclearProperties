@@ -649,6 +649,7 @@ if __name__ == "__main__":
     plot_heatmap(alpha, title="Possible Alpha Decay", show_colorbar=False)
 
     beta = beta_decay(nuclides)
+    plot_drip_lines(*best_params)
     plot_heatmap(beta, title="Possible Beta Decay", show_colorbar=False)
 
     deviation = Bethe_Weizsacker_deviation(nuclides, *best_params)
