@@ -178,12 +178,15 @@ def plot_heatmap(data_matrix, title="", vmin=None, vmax=None, show_colorbar=True
     # Mask missing values
     data_masked = np.ma.masked_invalid(data_matrix)
 
-    if categories is not None:
-        elements = len(categories)
-        vmin, vmax = 0.5, len(categories) + 0.5
-
     # Create colormap that leaves masked values as white
-    cmap = colormap(elements)
+    if categories is not None:
+        # Category k of n gets the color of the value k on the scale from 0 to n
+        n = len(categories)
+        cmap = ListedColormap(colormap()(np.arange(1, n + 1) / n))
+        vmin, vmax = 0.5, n + 0.5
+    else:
+        cmap = colormap(elements)
+
     cmap.set_bad(color='white')  # masked values appear white
 
     if under is not None:
@@ -552,7 +555,7 @@ def alpha_decay(nuclides):
 
 def beta_decay(nuclides):
     """ Finds all nuclides that can decay via beta process:
-        1 = beta-minus, 2 = electron capture (and beta-plus if Q_EC > 2 Me), 3 = beta-stable,
+        1 = electron capture (and beta-plus if Q_EC > 2 Me), 2 = beta-minus, 3 = beta-stable,
         NaN = cannot be decided (mass of the daughter nucleus not measured)
     """
 
@@ -583,9 +586,9 @@ def beta_decay(nuclides):
             Q_EC = M_matrix[N, Z] - mass(N + 1, Z - 1) + Me if Z > 0 else -np.inf
 
             if Q_betaminus > 0:
-                beta[N, Z] = 1
-            elif Q_EC > 0:
                 beta[N, Z] = 2
+            elif Q_EC > 0:
+                beta[N, Z] = 1
             elif not np.isnan(Q_betaminus) and not np.isnan(Q_EC):
                 beta[N, Z] = 3
 
@@ -658,7 +661,7 @@ if __name__ == "__main__":
 
     beta = beta_decay(nuclides)
     plot_drip_lines(*best_params)
-    plot_heatmap(beta, title="Possible Beta Decay", label="", categories=[r"$\beta^-$", r"EC / $\beta^+$", "stable"])
+    plot_heatmap(beta, title="Possible Beta Decay", label="", categories=[r"EC / $\beta^+$", r"$\beta^-$", "stable"])
 
     deviation = Bethe_Weizsacker_deviation(nuclides, *best_params)
     plot_heatmap(deviation, title="Deviation Experiment - Bethe-Weizsäcker", label='Bexp - Btheor [MeV]', vmin=-10, vmax=10)
