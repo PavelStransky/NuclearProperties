@@ -38,7 +38,7 @@ def import_masses():
             nuclide["symbol"] = line[20:22].strip()
 
             # Binding energy per nucleon (small b)
-            b = line[54:66]
+            b = line[54:67]
 
             # We skip nonexperimental values marked by the # sign
             if b.find('#') >= 0:
@@ -46,7 +46,7 @@ def import_masses():
 
             # We convert keVs into MeVs
             nuclide["b"] = float(b) / 1000
-            nuclide["berror"] = float(line[68:77]) / 1000
+            nuclide["berror"] = float(line[68:78]) / 1000
 
             # Binding energy (capital B)
             nuclide["B"] = nuclide["b"] * nuclide["A"]
@@ -61,20 +61,33 @@ def import_masses():
 
 
 def import_spins(nuclides):
+    """ Reads ground-state spins (stored as 2J) and parities from the data file and adds them to the nuclides array.
+        Unknown values are NaN.
+    """
     ignore_characters = ['#', '(', ')', ' ', '*']
 
-    """ Reads spins from the data file and adds them to the nuclides array """
-    with open(r"nubase_4.mas20.txt") as file:
-        # We skip the header
-        for _ in range(25):
-            file.readline()
+    nuclides_by_AZ = {(nuclide["A"], nuclide["Z"]): nuclide for nuclide in nuclides}
 
+    for nuclide in nuclides:
+        nuclide["spin"] = np.nan
+        nuclide["parity"] = np.nan
+
+    with open(r"nubase_4.mas20.txt") as file:
         for line in file:
+            # We skip the header
+            if line.startswith('#'):
+                continue
+
             A = int(line[0:3])
             Z = int(line[4:7])
             iso = int(line[7:8])
-            
-            spin_str = line[88:96]
+
+            # We take only ground states (iso > 0 are isomers, excited levels, resonances and isobaric analog states)
+            if iso != 0 or (A, Z) not in nuclides_by_AZ:
+                continue
+
+            # Spin and parity without the isospin (T=...)
+            spin_str = line[88:102].split("T=")[0]
 
             # We skip nonexperimental values marked by the # sign
             if spin_str.find('#') >= 0:
@@ -90,7 +103,7 @@ def import_spins(nuclides):
             if spin_str == "":
                 continue
 
-            parity = 0
+            parity = np.nan
             spin = 0
 
             if spin_str[-1] == '+':
@@ -111,25 +124,9 @@ def import_spins(nuclides):
 
             # print(A, Z, iso, spin_str, spin, parity)
 
-            for nuclide in nuclides:
-                if nuclide["A"] == A and nuclide["Z"] == Z:
-                    if "isomer" in nuclide and nuclide["isomer"] < iso:
-                        continue
-
-                    nuclide["spin"] = spin
-                    nuclide["parity"] = parity
-                    nuclide["isomer"] = iso
-                    break
-
-    for nuclide in nuclides:
-        if "spin" in nuclide:
-                continue
-
-        nuclide["spin"] = 0
-        nuclide["parity"] = 0
-        nuclide["isomer"] = 0
-
-    return
+            nuclide = nuclides_by_AZ[(A, Z)]
+            nuclide["spin"] = spin
+            nuclide["parity"] = parity
 
 def max_nza(nuclides):
     """ Returns maximum values of the neutron number, proton number and mass number """
@@ -146,16 +143,15 @@ def max_nza(nuclides):
 
 
 def sort_nuclides(nuclides, name="b"):
-    """ Sorts the nuclides array according to the given criterion (Python dictionaries are ordered since Python 3.7) """
-    keys = [nuclide[name] for nuclide in nuclides]
-    return [nuclide for _, nuclide in sorted(zip(keys, nuclides))]
+    """ Sorts the nuclides array according to the given criterion """
+    return sorted(nuclides, key=lambda nuclide: nuclide[name])
 
 
 def create_matrix(nuclides, name="b"):
-    """ Returns the element with the given name as a 2D array """
+    """ Returns the element with the given name as a 2D array indexed [N, Z] (NaN where there are no data) """
     max_N, max_Z, _ = max_nza(nuclides)
 
-    result = np.zeros((max_N + 1, max_Z + 1))
+    result = np.full((max_N + 1, max_Z + 1), np.nan)
 
     for nuclide in nuclides:
         result[nuclide["N"], nuclide["Z"]] = nuclide[name]
@@ -174,14 +170,24 @@ def colormap(elements=2048):
     return cmap
 
 
-def plot_heatmap(data_matrix, title="", vmin=None, vmax=None, show_colorbar=True, label='B/A [MeV]', elements=2048):
-    """ Plots a heatmap of the given data matrix """
-    # # Mask zeros
-    data_masked = np.ma.masked_where(data_matrix == 0, data_matrix)
+def plot_heatmap(data_matrix, title="", vmin=None, vmax=None, show_colorbar=True, label='B/A [MeV]', elements=2048, categories=None, under=None):
+    """ Plots a heatmap of the given data matrix (NaN values are not shown)
+        categories : labels of the integer values 1, 2, ..., n (for categorical data)
+        under : color of the values below vmin
+    """
+    # Mask missing values
+    data_masked = np.ma.masked_invalid(data_matrix)
 
-    # # Create colormap that leaves masked values as white
+    if categories is not None:
+        elements = len(categories)
+        vmin, vmax = 0.5, len(categories) + 0.5
+
+    # Create colormap that leaves masked values as white
     cmap = colormap(elements)
     cmap.set_bad(color='white')  # masked values appear white
+
+    if under is not None:
+        cmap.set_under(color=under)
 
     if not show_colorbar and vmin is None:
         vmin = 0
@@ -196,7 +202,9 @@ def plot_heatmap(data_matrix, title="", vmin=None, vmax=None, show_colorbar=True
         plt.axhline(y=magic, color='gray', alpha=0.5, linestyle='--', linewidth=0.8)
 
     if show_colorbar:
-        plt.colorbar(label=label)
+        colorbar = plt.colorbar(label=label, extend='min' if under is not None else 'neither')
+        if categories is not None:
+            colorbar.set_ticks(range(1, len(categories) + 1), labels=categories)
 
     plt.title(title)
 
@@ -208,7 +216,7 @@ def plot_heatmap(data_matrix, title="", vmin=None, vmax=None, show_colorbar=True
     plt.show()
 
 
-def Bethe_Weizsacker(N, Z, a_v=15.76, a_s=17.81, a_c=0.711, a_a=23.7, delta=34, delta_exp=3/4):
+def Bethe_Weizsacker(N, Z, a_v=15.76, a_s=17.81, a_c=0.711, a_a=23.7, delta=34.0, delta_exp=3/4):
     """ Calculate binding energy in MeV using the Bethe-Weizsäcker formula.
         N : int or array-like
         Z : int or array-like
@@ -239,8 +247,8 @@ def most_bound_nuclei(nuclides, num=10):
     nuclides_sorted = sort_nuclides(nuclides, name="b")[::-1]
 
     print(f"Top {num} most bound nuclei:")
-    for i in range(1, num + 1):
-        print(f"{i}: {nuclides_sorted[i]['symbol']} Z={nuclides_sorted[i]['Z']}, N={nuclides_sorted[i]['N']}, BA={nuclides_sorted[i]['b']:.4f} MeV")
+    for i, nuclide in enumerate(nuclides_sorted[:num], start=1):
+        print(f"{i}: {nuclide['symbol']} Z={nuclide['Z']}, N={nuclide['N']}, BA={nuclide['b']:.4f} MeV")
 
 
 def separation(nuclides, N_diff=0, Z_diff=0):
@@ -249,28 +257,28 @@ def separation(nuclides, N_diff=0, Z_diff=0):
         Z_diff : difference in proton number (e.g., 2 for 2p separation energy)
     """
     M_matrix = create_matrix(nuclides, name="M")
-    result = np.zeros_like(M_matrix)
+    result = np.full_like(M_matrix, np.nan)
 
     M_diff = Z_diff * Mp + N_diff * Mn
 
-    if Z_diff != 0 and N_diff != 0 and M_matrix[N_diff, Z_diff] != 0:
+    if Z_diff != 0 and N_diff != 0 and not np.isnan(M_matrix[N_diff, Z_diff]):
         M_diff = M_matrix[N_diff, Z_diff]  # If we separate an existing nucleus, we use its mass
 
     for N in range(N_diff, M_matrix.shape[0]):
         for Z in range(Z_diff, M_matrix.shape[1]):
-            if M_matrix[N, Z] != 0 and M_matrix[N - N_diff, Z - Z_diff] != 0:
-                result[N, Z] = M_matrix[N - N_diff, Z - Z_diff] - M_matrix[N, Z] + M_diff
+            # A missing mass (NaN) gives NaN separation energy
+            result[N, Z] = M_matrix[N - N_diff, Z - Z_diff] - M_matrix[N, Z] + M_diff
 
     return result
 
 
-def plot_beta_lines(matrix, As=range(30, 40), title=""):
+def plot_beta_lines(matrix, As=range(30, 40), title="", label="B/A [MeV]"):
     """ Plot Beta lines (A = const) for given A range """
     Zs = np.array(range(matrix.shape[1]), dtype=int)
 
     for A in As:
         Nx = -Zs + A
-        mask = Nx > 0
+        mask = (Nx >= 0) & (Nx < matrix.shape[0])
 
         Nx = Nx[mask]
         if len(Nx) == 0:
@@ -280,10 +288,10 @@ def plot_beta_lines(matrix, As=range(30, 40), title=""):
 
         line = matrix[Nx, Zx]
 
-        if np.count_nonzero(line) == 0:
+        if np.all(np.isnan(line)):
             continue
 
-        mask = line != 0
+        mask = ~np.isnan(line)
 
         Zx = Zx[mask]
         line = line[mask]
@@ -292,7 +300,7 @@ def plot_beta_lines(matrix, As=range(30, 40), title=""):
 
     plt.title(title)
     plt.xlabel('Z')
-    plt.ylabel('B/A [MeV]')
+    plt.ylabel(label)
     plt.legend(fontsize='small')
     plt.tight_layout()
     plt.show()
@@ -307,12 +315,12 @@ def plot_isotope_lines(nuclides, matrix, Zs=None, title="", label="B/A [MeV]"):
     for Z in Zs:
         line = matrix[:, Z]
 
-        if np.count_nonzero(line) == 0:
+        if np.all(np.isnan(line)):
             continue
 
         Ns = np.array(range(matrix.shape[0]))
 
-        mask = line != 0
+        mask = ~np.isnan(line)
 
         Ns = Ns[mask]
         line = line[mask]
@@ -336,7 +344,7 @@ def plot_iso_lines(nuclides, matrix, Z=20, N=20, title="", label="J"):
     line = matrix[:, Z]
     Ns = np.array(range(matrix.shape[0]))
 
-    mask = line != 0
+    mask = ~np.isnan(line)
 
     Ns = Ns[mask]
     line = line[mask]
@@ -346,7 +354,7 @@ def plot_iso_lines(nuclides, matrix, Z=20, N=20, title="", label="J"):
     line = matrix[N, :]
     Zs = np.array(range(matrix.shape[1]))
 
-    mask = line != 0
+    mask = ~np.isnan(line)
 
     Zs = Zs[mask]
     line = line[mask]
@@ -361,16 +369,16 @@ def plot_iso_lines(nuclides, matrix, Z=20, N=20, title="", label="J"):
 
 
 def compare_fits(nuclides, cut=20):
-    """ Compare different fits to the Bethe-Weizsäcker formula (cut is minimum A to include) """
+    """ Compare different fits to the Bethe-Weizsäcker formula (first for all nuclides, then only for A >= cut).
+        Returns the parameters of the best fit for A >= cut including the pairing exponent,
+        so that they can be passed directly as Bethe_Weizsacker(N, Z, *params)
+    """
+    # Free nucleons (A = 1) are not bound systems
+    nuclides = [nuclide for nuclide in nuclides if nuclide['A'] > 1]
+
     Ns = np.array([nuclide['N'] for nuclide in nuclides])
     Zs = np.array([nuclide['Z'] for nuclide in nuclides])
-
-    NZs = np.vstack((Ns, Zs))
-    As = Ns + Zs
-
-    bs = np.array([nuclide['b'] for nuclide in nuclides])
-    
-    length = len(bs)
+    Bs = np.array([nuclide['B'] for nuclide in nuclides])
 
     def BW_fit_B(NZ, a_v=15.76, a_s=17.81, a_c=0.711, a_a=23.7, delta=33.5):
         """ Wrapper for Bethe-Weizsäcker to fit B """
@@ -382,8 +390,8 @@ def compare_fits(nuclides, cut=20):
         N, Z = NZ
         return Bethe_Weizsacker(N, Z, a_v, a_s, a_c, a_a, delta) / (N + Z)
 
-    def BW_fit_B_noAC(NZ, a_v=15.76, a_s=17.81, a_a=23.7, delta=33.5):
-        """ Wrapper for Bethe-Weizsäcker to fit B without Coulomb term """
+    def BW_fit_B_fixedAC(NZ, a_v=15.76, a_s=17.81, a_a=23.7, delta=33.5):
+        """ Wrapper for Bethe-Weizsäcker to fit B with the Coulomb coefficient fixed to a_c = 0.711 MeV """
         N, Z = NZ
         return Bethe_Weizsacker(N, Z, a_v, a_s, 0.711, a_a, delta)
 
@@ -392,61 +400,50 @@ def compare_fits(nuclides, cut=20):
         N, Z = NZ
         return Bethe_Weizsacker(N, Z, a_v, a_s, a_c, a_a, delta, delta_exp=1/2)
 
-    def fit(params, fit_function, per_nucleon=False):
-        p_values, covariance = curve_fit(fit_function, NZs, bs * As if not per_nucleon else bs, p0=list(params.values()))
-        res = bs * As - fit_function(NZs, *p_values) * (1 if not per_nucleon else As)
+    def rms(residuals):
+        """ Root-mean-square deviation """
+        return np.sqrt(np.mean(residuals**2))
 
-        avg_res = np.sqrt(np.sum(res**2)) / length
-        print(f"{fit_function.__name__} (R={avg_res:.3f})", [f"{name}={value:.3f}+{error:.3f}" for name, value, error in zip(params.keys(), p_values, np.sqrt(np.diag(covariance)))])
+    def fit(N, Z, B, params, fit_function, per_nucleon=False):
+        """ Fits B (or B/A if per_nucleon) and prints the RMS deviation of B """
+        NZ = np.vstack((N, Z))
+        A = N + Z
+
+        p_values, covariance = curve_fit(fit_function, NZ, B / A if per_nucleon else B, p0=list(params.values()))
+        res = B - fit_function(NZ, *p_values) * (A if per_nucleon else 1)
+
+        print(f"{fit_function.__name__} (RMS={rms(res):.3f} MeV)", [f"{name}={value:.3f}+{error:.3f}" for name, value, error in zip(params.keys(), p_values, np.sqrt(np.diag(covariance)))])
 
         return p_values
 
-    res = bs - Bethe_Weizsacker(Ns, Zs)
-    print(f"Wiki (LS2) (R={np.sqrt(np.sum(res**2)) / length:.3f})")
+    for A_min in [2, cut]:
+        mask = Ns + Zs >= A_min
+        N, Z, B = Ns[mask], Zs[mask], Bs[mask]
 
-    params = {"a_v": 15.75, "a_s": 17.8, "a_c": 0.711, "a_a": 23.7, "delta": 34}
-    fit(params, BW_fit_b, per_nucleon=True)
+        print(f"\nFitting {len(B)} nuclei with A >= {A_min}")
 
-    params = {"a_v": 15.75, "a_s": 17.8, "a_c": 0.711, "a_a": 23.7, "delta": 34}
-    fit(params, BW_fit_B, per_nucleon=False)
+        print(f"Wiki (LS2) (RMS={rms(B - Bethe_Weizsacker(N, Z)):.3f} MeV)")
 
-    params = {"a_v": 15.75, "a_s": 17.8, "a_a": 23.7, "delta": 34}
-    fit(params, BW_fit_B_noAC, per_nucleon=False)
+        params = {"a_v": 15.75, "a_s": 17.8, "a_c": 0.711, "a_a": 23.7, "delta": 34}
+        fit(N, Z, B, params, BW_fit_b, per_nucleon=True)
 
-    params = {"a_v": 15.75, "a_s": 17.8, "a_c": 0.711, "a_a": 23.7, "delta": 34}
-    best_fit = fit(params, BW_fit_B_pairing12, per_nucleon=False)
+        params = {"a_v": 15.75, "a_s": 17.8, "a_c": 0.711, "a_a": 23.7, "delta": 34}
+        fit(N, Z, B, params, BW_fit_B)
 
-    print("\nFitting only for A >= ", cut)
+        params = {"a_v": 15.75, "a_s": 17.8, "a_a": 23.7, "delta": 34}
+        fit(N, Z, B, params, BW_fit_B_fixedAC)
 
-    bs = bs[As >= cut]
-    Ns = Ns[As >= cut]
-    Zs = Zs[As >= cut]
-    As = Ns + Zs
-    NZs = np.vstack((Ns, Zs))
-    length = len(bs)
+        params = {"a_v": 15.75, "a_s": 17.8, "a_c": 0.711, "a_a": 23.7, "delta": 34}
+        best_fit = fit(N, Z, B, params, BW_fit_B_pairing12)
 
-    res = bs - Bethe_Weizsacker(Ns, Zs)
-    print(f"Wiki (LS2) (R={np.sqrt(np.sum(res**2)) / length:.3f})")
-
-    params = {"a_v": 15.75, "a_s": 17.8, "a_c": 0.711, "a_a": 23.7, "delta": 34}
-    fit(params, BW_fit_b, per_nucleon=True)
-
-    params = {"a_v": 15.75, "a_s": 17.8, "a_c": 0.711, "a_a": 23.7, "delta": 34}
-    fit(params, BW_fit_B, per_nucleon=False)
-
-    params = {"a_v": 15.75, "a_s": 17.8, "a_a": 23.7, "delta": 34}
-    fit(params, BW_fit_B_noAC, per_nucleon=False)
-
-    params = {"a_v": 15.75, "a_s": 17.8, "a_c": 0.711, "a_a": 23.7, "delta": 34}
-    fit(params, BW_fit_B_pairing12, per_nucleon=False)
-
-    return best_fit
+    # The best fit has the pairing term proportional to A^(-1/2)
+    return [*best_fit, 1/2]
 
 def Bethe_Weizsacker_deviation(nuclides, *params):
     """ Calculate deviation matrix from Bethe-Weizsäcker formula. """
     max_N, max_Z, _ = max_nza(nuclides)
 
-    difference_matrix = np.zeros((max_N + 1, max_Z + 1))
+    difference_matrix = np.full((max_N + 1, max_Z + 1), np.nan)
 
     for nuclide in nuclides:
         N = nuclide['N']
@@ -458,8 +455,8 @@ def Bethe_Weizsacker_deviation(nuclides, *params):
 
 
 def neutron_drip_line(*params):
-    """ Neutron drip line """    
-    Ns = range(1, 160)
+    """ Neutron drip line """
+    Ns = range(1, 300)
 
     drip_line = []
     Zs = []
@@ -492,7 +489,9 @@ def proton_drip_line(*params):
 
 
 def beta_stability(*params):
-    """ Region of beta stability """
+    """ Valley of beta stability: for each A, the nucleus with the minimal atomic mass
+        M = Z M_H + N M_n - B, i.e., with the maximal B + Z (M_n - M_H)
+    """
     Zs = np.array(range(1, 120), dtype=int)
 
     drip_line = []
@@ -506,7 +505,8 @@ def beta_stability(*params):
         if len(Nx) == 0:
             continue
 
-        B = Bethe_Weizsacker(Nx, Zs[mask], *params)
+        # Hydrogen atom mass M_H = M_p + M_e (electron binding neglected)
+        B = Bethe_Weizsacker(Nx, Zs[mask], *params) + Zs[mask] * (Mn - Mp - Me)
         max_i = np.argmax(B)
         if max_i < len(B) - 1:
             Ns.append(Nx[max_i])
@@ -523,63 +523,71 @@ def plot_drip_lines(*best_params):
 
 
 def alpha_decay(nuclides):
-    """ Finds all possible nuclides that can decay via alpha process """
+    """ Finds all nuclides that can decay via alpha process:
+        1 = alpha decay energetically possible (Q_alpha > 0), 2 = forbidden,
+        NaN = cannot be decided (mass of the daughter nucleus not measured)
+    """
 
     M_matrix = create_matrix(nuclides, name="M")
 
-    # Hellium - alpha particle
+    # Helium - alpha particle
     M_alpha = M_matrix[2, 2]
 
-    alpha = np.zeros_like(M_matrix, dtype=int)
+    alpha = np.full_like(M_matrix, np.nan)
 
-    max_Z, max_N = M_matrix.shape
+    max_N, max_Z = M_matrix.shape
 
-    for Z in range(max_Z):
-        for N in range(max_N):
-            if N <= 2 or Z <= 2 or M_matrix[Z, N] == 0 or M_matrix[Z - 2, N - 2] == 0:
+    for N in range(2, max_N):
+        for Z in range(2, max_Z):
+            Q_alpha = M_matrix[N, Z] - M_matrix[N - 2, Z - 2] - M_alpha
+
+            # Parent or daughter not measured
+            if np.isnan(Q_alpha):
                 continue
 
-            mass_parent = M_matrix[Z, N]
-            mass_daughter = M_matrix[Z - 2, N - 2]
-
-            if mass_parent > mass_daughter + M_alpha:
-                alpha[Z, N] = 1
-            else:
-                alpha[Z, N] = 2
+            alpha[N, Z] = 1 if Q_alpha > 0 else 2
 
     return alpha
 
 
 def beta_decay(nuclides):
-    """ Finds all possible nuclides that can decay via beta process """
+    """ Finds all nuclides that can decay via beta process:
+        1 = beta-minus, 2 = electron capture (and beta-plus if Q_EC > 2 Me), 3 = beta-stable,
+        NaN = cannot be decided (mass of the daughter nucleus not measured)
+    """
 
     M_matrix = create_matrix(nuclides, name="M")
 
-    beta = np.zeros_like(M_matrix, dtype=int)
+    beta = np.full_like(M_matrix, np.nan)
 
-    max_Z, max_N = M_matrix.shape
+    max_N, max_Z = M_matrix.shape
 
-    for Z in range(max_Z):
-        for N in range(max_N):
-            if M_matrix[Z, N] == 0:
+    def mass(N, Z):
+        """ Mass of the nucleus (NaN if not measured) """
+        if N < max_N and Z < max_Z:
+            return M_matrix[N, Z]
+        return np.nan
+
+    for N in range(max_N):
+        for Z in range(max_Z):
+            if np.isnan(M_matrix[N, Z]):
                 continue
 
-            if Z >= max_Z - 1 or M_matrix[Z + 1, N - 1] == 0:
-                continue
+            # Q-values from nuclear masses (electron binding energies neglected);
+            # -inf if the process is impossible (no neutron or proton to convert)
 
-            if N >= max_N - 1 or M_matrix[Z - 1, N + 1] == 0:
-                continue
+            # beta-minus: (N, Z) -> (N - 1, Z + 1) + e- + antineutrino
+            Q_betaminus = M_matrix[N, Z] - mass(N - 1, Z + 1) - Me if N > 0 else -np.inf
 
-            mass_parent = M_matrix[Z, N]
-            mass_betaminus = M_matrix[Z + 1, N - 1]
-            mass_betaplus = M_matrix[Z - 1, N + 1]
+            # electron capture: (N, Z) + e- -> (N + 1, Z - 1) + neutrino
+            Q_EC = M_matrix[N, Z] - mass(N + 1, Z - 1) + Me if Z > 0 else -np.inf
 
-            if N > 1 and mass_parent > mass_betaminus + Mn - Mp:
-                beta[Z, N] = 1
-            elif Z > 1 and mass_parent > mass_betaplus - Mn + Mp:
-                beta[Z, N] = 2
-            else:
-                beta[Z, N] = 3
+            if Q_betaminus > 0:
+                beta[N, Z] = 1
+            elif Q_EC > 0:
+                beta[N, Z] = 2
+            elif not np.isnan(Q_betaminus) and not np.isnan(Q_EC):
+                beta[N, Z] = 3
 
     return beta
 
@@ -593,7 +601,7 @@ def plot_nuclei_along_beta_stability(nuclides, params):
     bs = []
     symbols = []
     for N, Z in zip(Ns_valley, Zs_valley):
-        if N < b_matrix.shape[0] and Z < b_matrix.shape[1] and b_matrix[N, Z] != 0:
+        if N < b_matrix.shape[0] and Z < b_matrix.shape[1] and not np.isnan(b_matrix[N, Z]):
             As.append(N + Z)
             bs.append(b_matrix[N, Z])
             symbols.append(nuclides[[nuclide['N'] == N and nuclide['Z'] == Z for nuclide in nuclides].index(True)]['symbol'])
@@ -646,26 +654,27 @@ if __name__ == "__main__":
     plot_beta_lines(b_matrix, title="Beta lines", As=[133,134])
 
     alpha = alpha_decay(nuclides)
-    plot_heatmap(alpha, title="Possible Alpha Decay", show_colorbar=False)
+    plot_heatmap(alpha, title="Possible Alpha Decay", label="", categories=[r"$Q_\alpha > 0$", r"$Q_\alpha < 0$"])
 
     beta = beta_decay(nuclides)
     plot_drip_lines(*best_params)
-    plot_heatmap(beta, title="Possible Beta Decay", show_colorbar=False)
+    plot_heatmap(beta, title="Possible Beta Decay", label="", categories=[r"$\beta^-$", r"EC / $\beta^+$", "stable"])
 
     deviation = Bethe_Weizsacker_deviation(nuclides, *best_params)
-    plot_heatmap(deviation, title="Deviation Experiment - Bethe-Weizsäcker", label='Bexp/A - Btheor/A [MeV]', vmin=-10, vmax=10)
+    plot_heatmap(deviation, title="Deviation Experiment - Bethe-Weizsäcker", label='Bexp - Btheor [MeV]', vmin=-10, vmax=10)
 
+    # Unbound nuclei (negative separation energy) in gray
     SE = separation(nuclides, 0, 1)
-    plot_heatmap(SE, title="1p separation Energy", label="S1p [MeV]", vmin=0, vmax=15)
+    plot_heatmap(SE, title="1p separation Energy", label="S1p [MeV]", vmin=0, vmax=15, under='gray')
 
     SE = separation(nuclides, 1, 0)
-    plot_heatmap(SE, title="1n separation Energy", label="S1n [MeV]", vmin=0, vmax=15)
+    plot_heatmap(SE, title="1n separation Energy", label="S1n [MeV]", vmin=0, vmax=15, under='gray')
 
     SE = separation(nuclides, 0, 2)
-    plot_heatmap(SE, title="2p separation Energy", label="S2p [MeV]", vmin=0, vmax=25)
+    plot_heatmap(SE, title="2p separation Energy", label="S2p [MeV]", vmin=0, vmax=25, under='gray')
 
     SE = separation(nuclides, 2, 0)
-    plot_heatmap(SE, title="2n separation Energy", label="S2n [MeV]", vmin=0, vmax=25)
+    plot_heatmap(SE, title="2n separation Energy", label="S2n [MeV]", vmin=0, vmax=25, under='gray')
     plot_isotope_lines(nuclides, SE, title="2n separation energy", label="S2n [MeV]")
 
     SE = separation(nuclides, 2, 2)
