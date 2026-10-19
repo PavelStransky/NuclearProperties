@@ -518,10 +518,54 @@ def beta_stability(*params):
     return np.array(Ns, dtype=int), np.array(drip_line, dtype=int)
 
 
-def plot_drip_lines(*best_params):
+def beta_stability_experimental(nuclides):
+    """ Valley of beta stability from the measured masses: for each A, the isobar with the minimal
+        atomic mass M + Z M_e (electron binding neglected).
+        The minimum is accepted only if both neighbouring isobars are measured (or cannot exist),
+        otherwise the true minimum may lie among the unmeasured nuclei (A is skipped).
+    """
+    M_matrix = create_matrix(nuclides, name="M")
+    max_N, max_Z = M_matrix.shape
+
+    Ns = []
+    Zs = []
+
+    for A in range(1, max_N + max_Z - 1):
+        Zx = np.arange(0, A + 1)
+        Nx = A - Zx
+
+        # Atomic masses of the isobars (NaN if not measured)
+        inside = (Nx < max_N) & (Zx < max_Z)
+        atomic_mass = np.full(len(Zx), np.nan)
+        atomic_mass[inside] = M_matrix[Nx[inside], Zx[inside]] + Zx[inside] * Me
+
+        if np.all(np.isnan(atomic_mass)):
+            continue
+
+        # Isobars with Z < 0 or N < 0 cannot exist (infinite mass)
+        atomic_mass = np.concatenate(([np.inf], atomic_mass, [np.inf]))
+
+        min_i = np.nanargmin(atomic_mass)
+        if np.isnan(atomic_mass[min_i - 1]) or np.isnan(atomic_mass[min_i + 1]):
+            continue
+
+        Ns.append(Nx[min_i - 1])
+        Zs.append(Zx[min_i - 1])
+
+    return np.array(Ns, dtype=int), np.array(Zs, dtype=int)
+
+
+def plot_drip_lines(*best_params, nuclides=None):
+    """ Plots the drip lines and the valley of stability from the Bethe-Weizsäcker formula
+        (and the valley of stability from the measured masses if nuclides are given)
+    """
     plt.plot(*neutron_drip_line(*best_params), color='blue', linestyle='-', linewidth=1, label='Neutron Drip Line')
     plt.plot(*proton_drip_line(*best_params), color='green', linestyle='-', linewidth=1, label='Proton Drip Line')
     plt.plot(*beta_stability(*best_params), color='black', linestyle='-', linewidth=1, label='Valley of Stability')
+
+    if nuclides is not None:
+        plt.plot(*beta_stability_experimental(nuclides), color='magenta', linestyle='-', linewidth=1, label='Valley of Stability (exp.)')
+
     plt.legend()
 
 
@@ -640,7 +684,7 @@ if __name__ == "__main__":
     import_spins(nuclides)
 
     best_params = compare_fits(nuclides)
-    plot_drip_lines(*best_params)
+    plot_drip_lines(*best_params, nuclides=nuclides)
 
     b_matrix = create_matrix(nuclides)
     plot_heatmap(b_matrix, title="Binding Energy per Nucleon", vmin=6, vmax=9)
@@ -660,7 +704,7 @@ if __name__ == "__main__":
     plot_heatmap(alpha, title="Possible Alpha Decay", label="", categories=[r"$Q_\alpha > 0$", r"$Q_\alpha < 0$"])
 
     beta = beta_decay(nuclides)
-    plot_drip_lines(*best_params)
+    plot_drip_lines(*best_params, nuclides=nuclides)
     plot_heatmap(beta, title="Possible Beta Decay", label="", categories=[r"EC / $\beta^+$", r"$\beta^-$", "stable"])
 
     deviation = Bethe_Weizsacker_deviation(nuclides, *best_params)
